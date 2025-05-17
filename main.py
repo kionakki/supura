@@ -23,7 +23,7 @@ def run():
 threading.Thread(target=run).start()
 
 
-TOKEN = os.getenv("DISCODE_TOKEN")
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
