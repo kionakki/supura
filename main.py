@@ -26,14 +26,14 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# チャンネルID（自分のチャンネルに置き換えてね）
+# チャンネルID（自分のチャンネルに置き換えてください）
 CHANNELS = {
-    "regular": 1373329458655662173,
-    "bankara_challenge": 1373335594096132247,
-    "bankara_open": 1373335766658449438,
-    "xmatch": 1373335891040276680,
-    "event": 1373335946082386052,
-    "coop": 1373335963782086806,
+    "regular": 123456789012345678,  # ナワバリバトル
+    "bankara_challenge": 234567890123456789,  # バンカラ チャレンジ
+    "bankara_open": 345678901234567890,  # バンカラ オープン
+    "xmatch": 456789012345678901,  # Xマッチ
+    "event": 567890123456789012,  # イベントマッチ
+    "coop": 678901234567890123,  # サーモンラン
 }
 
 # JST変換用
@@ -53,7 +53,9 @@ def make_embed(mode_name, schedule, is_coop=False):
         stage = schedule["stage"]["name"]
         weapon_names = [w["name"] for w in schedule["weapons"]]
         embed = discord.Embed(
-            title=f"{mode_name}", description=f"🕒 {start} ～ {end}（JST）", color=discord.Color.orange()
+            title=f"{mode_name}",
+            description=f"🕒 {start} ～ {end}（JST）",
+            color=discord.Color.orange()
         )
         embed.add_field(name="ステージ", value=stage, inline=False)
         embed.add_field(name="支給ブキ", value="\n".join(weapon_names), inline=False)
@@ -67,7 +69,9 @@ def make_embed(mode_name, schedule, is_coop=False):
     image_url = schedule["stage"].get("image")
 
     embed = discord.Embed(
-        title=f"{mode_name} - {rule}", description=f"🕒 {start} ～ {end}（JST）", color=discord.Color.blue()
+        title=f"{mode_name} - {rule}",
+        description=f"🕒 {start} ～ {end}（JST）",
+        color=discord.Color.blue()
     )
     embed.add_field(name="ステージ①", value=stage1, inline=True)
     embed.add_field(name="ステージ②", value=stage2, inline=True)
@@ -78,12 +82,15 @@ def make_embed(mode_name, schedule, is_coop=False):
 
 # APIからスケジュール取得
 def fetch_schedules():
-    res = requests.get("https://spla3.yuu26.com/api/schedules")
-    coop = requests.get("https://spla3.yuu26.com/api/coop/schedules")
-
-    data = res.json().get("data", {})  # ← 修正ポイント
-    coop_data = coop.json().get("data", {})
-    return data, coop_data
+    try:
+        res = requests.get("https://splatoon3.ink/data/schedules.json")
+        coop = requests.get("https://splatoon3.ink/data/coop.json")
+        data = res.json()
+        coop_data = coop.json()
+        return data, coop_data
+    except Exception as e:
+        print(f"スケジュール取得エラー: {e}")
+        return {}, {}
 
 # スケジュール送信ループ
 @tasks.loop(hours=2)
@@ -99,27 +106,34 @@ async def send_schedules():
     }
 
     for key, schedule in schedules.items():
-        if "start_time" in schedule:  # データが有効な場合のみ
+        if "start_time" in schedule:
             embed = make_embed(key.replace("_", " ").title(), schedule)
             channel_id = CHANNELS.get(key)
-            channel = bot.get_channel(channel_id)
-            if channel:
+            try:
+                channel = await bot.fetch_channel(channel_id)
                 await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                print(f"✅ {key} スケジュール送信成功")
+            except Exception as e:
+                print(f"❌ {key} スケジュール送信失敗: {e}")
 
     # サーモンランも送信
     coop_schedule = coop_data.get("schedules", [{}])[0]
     if "start_time" in coop_schedule:
         coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
-        coop_channel = bot.get_channel(CHANNELS["coop"])
-        if coop_channel:
+        coop_channel_id = CHANNELS.get("coop")
+        try:
+            coop_channel = await bot.fetch_channel(coop_channel_id)
             await coop_channel.send(embed=coop_embed, allowed_mentions=discord.AllowedMentions.none())
+            print("✅ サーモンラン スケジュール送信成功")
+        except Exception as e:
+            print(f"❌ サーモンラン スケジュール送信失敗: {e}")
 
 # Bot起動時
 @bot.event
 async def on_ready():
     print(f"{bot.user} でログインしました")
     send_schedules.start()
-    await send_schedules()  # ← 起動時にも投稿
+    await send_schedules()  # 起動時にも投稿
 
 # Bot実行
 bot.run(TOKEN)
