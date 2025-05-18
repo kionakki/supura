@@ -7,66 +7,45 @@ import pytz
 from flask import Flask
 import threading
 
+# Flaskサーバーで常時起動（Replit対策）
 app = Flask("")
-
 
 @app.route("/")
 def home():
     return "Bot is alive!"
 
-@bot.command()
-async def schedule(ctx):
-    data, coop_data = fetch_schedules()
-
-    schedules = {
-        "regular": data["regular"][0],
-        "bankara_challenge": data["bankara_challenge"][0],
-        "bankara_open": data["bankara_open"][0],
-        "xmatch": data["xmatch"][0],
-        "event": data["event"][0],
-    }
-
-    for key, schedule_data in schedules.items():
-        embed = make_embed(key.replace("_", " ").title(), schedule_data)
-        await ctx.send(embed=embed)
-
-    coop_schedule = coop_data["schedules"][0]
-    coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
-    await ctx.send(embed=coop_embed)
-###########
-
 def run():
     app.run(host="0.0.0.0", port=8080)
 
-
-# Flaskサーバーを別スレッドで起動
 threading.Thread(target=run).start()
 
-
+# DISCORD_TOKEN 環境変数から取得
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+# Bot設定
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ▼ あなたのサーバーのチャンネルIDに書き換えてください
+# チャンネルID（自分のサーバーのものに置き換える）
 CHANNELS = {
-    "regular": 1373329458655662173,  # ナワバリバトル
-    "bankara_challenge": 1373335594096132247,  # バンカラ チャレンジ
-    "bankara_open": 1373335766658449438,  # バンカラ オープン
-    "xmatch": 1373335891040276680,  # Xマッチ
-    "event": 1373335946082386052,  # イベントマッチ
-    "coop": 1373335963782086806,  # サーモンラン
+    "regular": 1373329458655662173,
+    "bankara_challenge": 1373335594096132247,
+    "bankara_open": 1373335766658449438,
+    "xmatch": 1373335891040276680,
+    "event": 1373335946082386052,
+    "coop": 1373335963782086806,
 }
 
+# タイムゾーン
 JST = pytz.timezone("Asia/Tokyo")
 
-
+# UTC→JST変換
 def convert_time(utc_str):
     utc_time = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
     jst_time = utc_time.astimezone(JST)
     return jst_time.strftime("%m/%d %H:%M")
 
-
+# Embed作成
 def make_embed(mode_name, schedule, is_coop=False):
     start = convert_time(schedule["start_time"])
     end = convert_time(schedule["end_time"])
@@ -98,16 +77,16 @@ def make_embed(mode_name, schedule, is_coop=False):
     embed.set_footer(text="スケジュールは2時間ごとに更新されます")
     return embed
 
-
+# API取得
 def fetch_schedules():
     res = requests.get("https://spla3.yuu26.com/api/schedules")
     coop = requests.get("https://spla3.yuu26.com/api/coop/schedules")
-
     return res.json(), coop.json()
 
-
+# 自動送信タスク（2時間おき）
 @tasks.loop(hours=2)
 async def send_schedules():
+    print("スケジュール送信開始")
     data, coop_data = fetch_schedules()
 
     schedules = {
@@ -125,18 +104,41 @@ async def send_schedules():
         if channel:
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
-    # サーモンランも送信
+    # サーモンラン
     coop_schedule = coop_data["schedules"][0]
     coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
     coop_channel = bot.get_channel(CHANNELS["coop"])
     if coop_channel:
         await coop_channel.send(embed=coop_embed, allowed_mentions=discord.AllowedMentions.none())
 
-
+# 起動時
 @bot.event
 async def on_ready():
     print(f"{bot.user} でログインしました")
     send_schedules.start()
+    await send_schedules()  # 起動直後にも送信
 
+# !schedule コマンド
+@bot.command()
+async def schedule(ctx):
+    print("!schedule コマンド実行")
+    data, coop_data = fetch_schedules()
 
+    schedules = {
+        "regular": data["regular"][0],
+        "bankara_challenge": data["bankara_challenge"][0],
+        "bankara_open": data["bankara_open"][0],
+        "xmatch": data["xmatch"][0],
+        "event": data["event"][0],
+    }
+
+    for key, schedule_data in schedules.items():
+        embed = make_embed(key.replace("_", " ").title(), schedule_data)
+        await ctx.send(embed=embed)
+
+    coop_schedule = coop_data["schedules"][0]
+    coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
+    await ctx.send(embed=coop_embed)
+
+# Bot起動
 bot.run(TOKEN)
