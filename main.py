@@ -28,7 +28,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # チャンネルID（自分のチャンネルに置き換えてください）
 CHANNELS = {
-    "regular": 123456789012345678,  # ナワバリバトル
+    "regular": 1373329458655662173,  # ナワバリバトル
     "bankara_challenge": 234567890123456789,  # バンカラ チャレンジ
     "bankara_open": 345678901234567890,  # バンカラ オープン
     "xmatch": 456789012345678901,  # Xマッチ
