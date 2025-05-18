@@ -7,7 +7,7 @@ import pytz
 from flask import Flask
 import threading
 
-# Flaskサーバーで常時起動（Replit対策）
+# Flask サーバー（Render対策）
 app = Flask("")
 
 @app.route("/")
@@ -19,14 +19,14 @@ def run():
 
 threading.Thread(target=run).start()
 
-# DISCORD_TOKEN 環境変数から取得
+# Discord Bot Token（環境変数）
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Bot設定
+# Discord Bot 設定
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# チャンネルID（自分のサーバーのものに置き換える）
+# チャンネルID（自分のチャンネルに置き換えてね）
 CHANNELS = {
     "regular": 1373329458655662173,
     "bankara_challenge": 1373335594096132247,
@@ -36,10 +36,9 @@ CHANNELS = {
     "coop": 1373335963782086806,
 }
 
-# タイムゾーン
+# JST変換用
 JST = pytz.timezone("Asia/Tokyo")
 
-# UTC→JST変換
 def convert_time(utc_str):
     utc_time = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
     jst_time = utc_time.astimezone(JST)
@@ -58,14 +57,14 @@ def make_embed(mode_name, schedule, is_coop=False):
         )
         embed.add_field(name="ステージ", value=stage, inline=False)
         embed.add_field(name="支給ブキ", value="\n".join(weapon_names), inline=False)
-        if schedule["stage"]["image"]:
+        if schedule["stage"].get("image"):
             embed.set_image(url=schedule["stage"]["image"])
         return embed
 
     rule = schedule["rule"]["name"]
     stage1 = schedule["stage"]["name"]
     stage2 = schedule["stage2"]["name"]
-    image_url = schedule["stage"]["image"]
+    image_url = schedule["stage"].get("image")
 
     embed = discord.Embed(
         title=f"{mode_name} - {rule}", description=f"🕒 {start} ～ {end}（JST）", color=discord.Color.blue()
@@ -77,68 +76,50 @@ def make_embed(mode_name, schedule, is_coop=False):
     embed.set_footer(text="スケジュールは2時間ごとに更新されます")
     return embed
 
-# API取得
+# APIからスケジュール取得
 def fetch_schedules():
     res = requests.get("https://spla3.yuu26.com/api/schedules")
     coop = requests.get("https://spla3.yuu26.com/api/coop/schedules")
-    return res.json(), coop.json()
 
-# 自動送信タスク（2時間おき）
+    data = res.json().get("data", {})  # ← 修正ポイント
+    coop_data = coop.json().get("data", {})
+    return data, coop_data
+
+# スケジュール送信ループ
 @tasks.loop(hours=2)
 async def send_schedules():
-    print("スケジュール送信開始")
     data, coop_data = fetch_schedules()
 
     schedules = {
-        "regular": data["regular"][0],
-        "bankara_challenge": data["bankara_challenge"][0],
-        "bankara_open": data["bankara_open"][0],
-        "xmatch": data["xmatch"][0],
-        "event": data["event"][0],
+        "regular": data.get("regular", [{}])[0],
+        "bankara_challenge": data.get("bankara_challenge", [{}])[0],
+        "bankara_open": data.get("bankara_open", [{}])[0],
+        "xmatch": data.get("xmatch", [{}])[0],
+        "event": data.get("event", [{}])[0],
     }
 
     for key, schedule in schedules.items():
-        embed = make_embed(key.replace("_", " ").title(), schedule)
-        channel_id = CHANNELS.get(key)
-        channel = bot.get_channel(channel_id)
-        if channel:
-            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        if "start_time" in schedule:  # データが有効な場合のみ
+            embed = make_embed(key.replace("_", " ").title(), schedule)
+            channel_id = CHANNELS.get(key)
+            channel = bot.get_channel(channel_id)
+            if channel:
+                await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
-    # サーモンラン
-    coop_schedule = coop_data["schedules"][0]
-    coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
-    coop_channel = bot.get_channel(CHANNELS["coop"])
-    if coop_channel:
-        await coop_channel.send(embed=coop_embed, allowed_mentions=discord.AllowedMentions.none())
+    # サーモンランも送信
+    coop_schedule = coop_data.get("schedules", [{}])[0]
+    if "start_time" in coop_schedule:
+        coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
+        coop_channel = bot.get_channel(CHANNELS["coop"])
+        if coop_channel:
+            await coop_channel.send(embed=coop_embed, allowed_mentions=discord.AllowedMentions.none())
 
-# 起動時
+# Bot起動時
 @bot.event
 async def on_ready():
     print(f"{bot.user} でログインしました")
     send_schedules.start()
-    await send_schedules()  # 起動直後にも送信
+    await send_schedules()  # ← 起動時にも投稿
 
-# !schedule コマンド
-@bot.command()
-async def schedule(ctx):
-    print("!schedule コマンド実行")
-    data, coop_data = fetch_schedules()
-
-    schedules = {
-        "regular": data["regular"][0],
-        "bankara_challenge": data["bankara_challenge"][0],
-        "bankara_open": data["bankara_open"][0],
-        "xmatch": data["xmatch"][0],
-        "event": data["event"][0],
-    }
-
-    for key, schedule_data in schedules.items():
-        embed = make_embed(key.replace("_", " ").title(), schedule_data)
-        await ctx.send(embed=embed)
-
-    coop_schedule = coop_data["schedules"][0]
-    coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
-    await ctx.send(embed=coop_embed)
-
-# Bot起動
+# Bot実行
 bot.run(TOKEN)
