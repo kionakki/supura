@@ -1,5 +1,6 @@
 import discord
-from discord.ext import tasks, commands
+from discord.ext import tasks
+from discord import app_commands
 import requests
 import os
 from datetime import datetime
@@ -19,24 +20,20 @@ def run():
 
 threading.Thread(target=run).start()
 
-# Discord Bot Token（環境変数）
+# トークン
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Discord Bot 設定
-intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-# チャンネルID（自分のチャンネルに置き換えてください）
+# チャンネルID（自分のIDに置き換える）
 CHANNELS = {
-    "regular": 1373329458655662173,  # ナワバリバトル
-    "bankara_challenge": 234567890123456789,  # バンカラ チャレンジ
-    "bankara_open": 345678901234567890,  # バンカラ オープン
-    "xmatch": 456789012345678901,  # Xマッチ
-    "event": 567890123456789012,  # イベントマッチ
-    "coop": 678901234567890123,  # サーモンラン
+    "regular": 1373329458655662173,
+    "bankara_challenge": 1373335594096132247,
+    "bankara_open": 1373335766658449438,
+    "xmatch": 1373335891040276680,
+    "event": 1373335946082386052,
+    "coop": 1373335963782086806,
 }
 
-# JST変換用
+# タイムゾーン設定
 JST = pytz.timezone("Asia/Tokyo")
 
 def convert_time(utc_str):
@@ -44,7 +41,7 @@ def convert_time(utc_str):
     jst_time = utc_time.astimezone(JST)
     return jst_time.strftime("%m/%d %H:%M")
 
-# Embed作成
+# Embed作成関数
 def make_embed(mode_name, schedule, is_coop=False):
     start = convert_time(schedule["start_time"])
     end = convert_time(schedule["end_time"])
@@ -80,7 +77,7 @@ def make_embed(mode_name, schedule, is_coop=False):
     embed.set_footer(text="スケジュールは2時間ごとに更新されます")
     return embed
 
-# APIからスケジュール取得
+# スケジュール取得関数
 def fetch_schedules():
     try:
         res = requests.get("https://splatoon3.ink/data/schedules.json")
@@ -92,7 +89,20 @@ def fetch_schedules():
         print(f"スケジュール取得エラー: {e}")
         return {}, {}
 
-# スケジュール送信ループ
+# Bot定義（スラッシュコマンド対応）
+intents = discord.Intents.default()
+bot = discord.Client(intents=intents)
+tree = app_commands.CommandTree(bot)
+
+# 起動時
+@bot.event
+async def on_ready():
+    await tree.sync()
+    print(f"{bot.user} でログインしました")
+    send_schedules.start()
+    await send_schedules()  # 起動時に1回送信
+
+# 自動送信ループ
 @tasks.loop(hours=2)
 async def send_schedules():
     data, coop_data = fetch_schedules()
@@ -116,7 +126,6 @@ async def send_schedules():
             except Exception as e:
                 print(f"❌ {key} スケジュール送信失敗: {e}")
 
-    # サーモンランも送信
     coop_schedule = coop_data.get("schedules", [{}])[0]
     if "start_time" in coop_schedule:
         coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
@@ -128,12 +137,29 @@ async def send_schedules():
         except Exception as e:
             print(f"❌ サーモンラン スケジュール送信失敗: {e}")
 
-# Bot起動時
-@bot.event
-async def on_ready():
-    print(f"{bot.user} でログインしました")
-    send_schedules.start()
-    await send_schedules()  # 起動時にも投稿
+# スラッシュコマンド：手動でスケジュールを取得
+@tree.command(name="schedule", description="今のスプラトゥーン3スケジュールを表示")
+async def schedule_command(interaction: discord.Interaction):
+    await interaction.response.defer()
+    data, coop_data = fetch_schedules()
 
-# Bot実行
+    schedules = {
+        "regular": data.get("regular", [{}])[0],
+        "bankara_challenge": data.get("bankara_challenge", [{}])[0],
+        "bankara_open": data.get("bankara_open", [{}])[0],
+        "xmatch": data.get("xmatch", [{}])[0],
+        "event": data.get("event", [{}])[0],
+    }
+
+    for key, schedule in schedules.items():
+        if "start_time" in schedule:
+            embed = make_embed(key.replace("_", " ").title(), schedule)
+            await interaction.followup.send(embed=embed)
+
+    coop_schedule = coop_data.get("schedules", [{}])[0]
+    if "start_time" in coop_schedule:
+        coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
+        await interaction.followup.send(embed=coop_embed)
+
+# Bot起動
 bot.run(TOKEN)
