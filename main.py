@@ -14,6 +14,26 @@ app = Flask("")
 def home():
     return "Bot is alive!"
 
+@bot.command()
+async def schedule(ctx):
+    data, coop_data = fetch_schedules()
+
+    schedules = {
+        "regular": data["regular"][0],
+        "bankara_challenge": data["bankara_challenge"][0],
+        "bankara_open": data["bankara_open"][0],
+        "xmatch": data["xmatch"][0],
+        "event": data["event"][0],
+    }
+
+    for key, schedule_data in schedules.items():
+        embed = make_embed(key.replace("_", " ").title(), schedule_data)
+        await ctx.send(embed=embed)
+
+    coop_schedule = coop_data["schedules"][0]
+    coop_embed = make_embed("サーモンラン", coop_schedule, is_coop=True)
+    await ctx.send(embed=coop_embed)
+###########
 
 def run():
     app.run(host="0.0.0.0", port=8080)
